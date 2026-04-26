@@ -10,5 +10,10 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  // Kita hapus bagian server HMR yang aneh itu agar stabil di Vercel
+  build: {
+    rollupOptions: {
+      // Kita paksa Vite untuk menyertakan firebase ke dalam bundle
+      external: [],
+    },
+  },
 });
