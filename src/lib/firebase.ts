@@ -3,12 +3,12 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "PASTE_API_KEY_KAMU_DI_SINI",
-  authDomain: "agri-optima.firebaseapp.com",
-  projectId: "agri-optima",
-  storageBucket: "agri-optima.firebasestorage.app",
-  messagingSenderId: "PASTE_SENDER_ID_DI_SINI",
-  appId: "PASTE_APP_ID_DI_SINI"
+  apiKey: "AIzaSy... (PASTE API KEY ASLI KAMU DI SINI)",
+  authDomain: "agri-optima-2026.firebaseapp.com",
+  projectId: "agri-optima-2026",
+  storageBucket: "agri-optima-2026.firebasestorage.app",
+  messagingSenderId: "TULIS SENDER ID KAMU",
+  appId: "TULIS APP ID KAMU"
 };
 
 const app = initializeApp(firebaseConfig);
