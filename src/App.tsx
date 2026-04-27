@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { SimplexSolver, Matrix } from './lib/simplex';
 import { 
-  Calculator, Truck, ShoppingBag, Plus, Trash2, 
-  MapPin, CreditCard, Info, Layers, CheckCircle2, 
-  TrendingUp, Package, Tool, Users, Search, ShoppingCart, X
+  Calculator, Truck, ShoppingBag, Plus, Trash2, MapPin, 
+  CreditCard, Info, Layers, CheckCircle2, TrendingUp, 
+  Package, Box, QrCode, ArrowRight, TruckIcon, UserCheck
 } from 'lucide-react';
 
 export default function App() {
   const [tab, setTab] = useState('optimasi');
-  const [isPaid, setIsPaid] = useState(false); // State untuk Paywall Optimasi
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [cart, setCart] = useState<any[]>([]);
+  const [activeStep, setActiveStep] = useState<'input' | 'payment' | 'result'>('input');
+  const [checkoutItem, setCheckoutItem] = useState<any>(null);
+  const [orderProgress, setOrderProgress] = useState(0);
 
   // --- STATE OPTIMASI ---
   const [tanaman, setTanaman] = useState([{ id: 1, nama: 'Padi', profit: 15000000 }]);
@@ -18,229 +18,207 @@ export default function App() {
   const [hasil, setHasil] = useState<any>(null);
 
   // --- DATA MOCKUP ---
-  const dataUber = {
-    bahan: [
-      { id: 101, name: 'Bibit Padi Unggul', price: 150000, desc: 'Varietas Inpari 32, tahan wereng.', img: 'https://images.unsplash.com/photo-1536633396167-31362e76f928?w=400' },
-      { id: 102, name: 'Pupuk NPK Pro', price: 450000, desc: 'Pupuk kimia seimbang untuk pertumbuhan.', img: 'https://images.unsplash.com/photo-1628352081506-83c43123ed6d?w=400' }
-    ],
-    alat: [
-      { id: 201, name: 'Traktor Quick G1000', price: 1200000, desc: 'Sewa harian traktor bajak sawah.', img: 'https://images.unsplash.com/photo-1592982537447-7440770cbfc9?w=400' }
-    ],
-    jasa: [
-      { id: 301, name: 'Drone Spraying', price: 350000, desc: 'Penyemprotan pestisida per hektar.', img: 'https://images.unsplash.com/photo-1622383529957-35b55e517220?w=400' }
-    ]
-  };
+  const dataUber = [
+    { id: 1, cat: 'Bahan', name: 'Pupuk Hayati', price: 250000, img: 'https://images.unsplash.com/photo-1628352081506-83c43123ed6d?w=400' },
+    { id: 2, cat: 'Alat', name: 'Traktor Mini', price: 850000, img: 'https://images.unsplash.com/photo-1592982537447-7440770cbfc9?w=400' },
+    { id: 3, cat: 'Jasa', name: 'Buruh Tanam', price: 150000, img: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=400' }
+  ];
 
   const dataHilir = [
-    { id: 501, name: 'Beras Premium 5kg', price: 75000, desc: 'Beras organik poles.', img: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400' },
-    { id: 502, name: 'Minyak Goreng Sawit', price: 18000, desc: 'Minyak bening kualitas super.', img: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=400' }
+    { id: 4, name: 'Beras Mentik Wangi 10kg', price: 165000, img: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400' },
+    { id: 5, name: 'Kripik Pisang Oven', price: 25000, img: 'https://images.unsplash.com/photo-1613554830385-a7c360170c72?w=400' }
   ];
 
   // --- LOGIC FUNCTIONS ---
-  const handleOptimasiClick = () => {
-    if (!isPaid) {
-      setShowPaymentModal(true);
-    } else {
-      runOptimasi();
-    }
-  };
-
-  const runOptimasi = () => {
+  const handleRunOptimasi = () => setActiveStep('payment');
+  
+  const confirmPaymentOptimasi = () => {
+    setActiveStep('result');
     const N = tanaman.length;
     const M1 = kendala.filter(c => c.type === '<=').length;
     const M2 = kendala.filter(c => c.type === '>=').length;
     const M3 = kendala.filter(c => c.type === '=').length;
-    const sortedKendala = [...kendala.filter(c => c.type === '<='), ...kendala.filter(c => c.type === '>='), ...kendala.filter(c => c.type === '=')];
-    const A: Matrix = Array.from({ length: sortedKendala.length + 3 }, () => new Array(N + 2).fill(0));
+    const sortedK = [...kendala.filter(c => c.type === '<='), ...kendala.filter(c => c.type === '>='), ...kendala.filter(c => c.type === '=')];
+    const A: Matrix = Array.from({ length: sortedK.length + 3 }, () => new Array(N + 2).fill(0));
     tanaman.forEach((t, j) => A[1][j + 2] = t.profit);
-    sortedKendala.forEach((c, i) => {
+    sortedK.forEach((c, i) => {
       A[i + 2][1] = c.target;
       c.koefs.forEach((val, j) => { A[i + 2][j + 2] = -val; });
     });
-    const res = SimplexSolver.solve(N, M1, M2, M3, A);
-    setHasil(res);
+    setHasil(SimplexSolver.solve(N, M1, M2, M3, A));
   };
 
-  const simulatePayment = () => {
-    alert("Memproses Pembayaran Rp 5.000...");
-    setTimeout(() => {
-      setIsPaid(true);
-      setShowPaymentModal(false);
-      alert("Pembayaran Berhasil! Sekarang Anda bisa melihat hasil optimasi.");
-    }, 1500);
-  };
+  const startCheckout = (item: any) => setCheckoutItem({ ...item, address: '', delivery: 'antar' });
 
-  const addToCart = (item: any) => {
-    setCart([...cart, { ...item, cartId: Date.now() }]);
-    alert(`${item.name} dimasukkan ke keranjang!`);
+  const processOrder = () => {
+    setOrderProgress(10);
+    const interval = setInterval(() => {
+      setOrderProgress(prev => {
+        if (prev >= 100) { clearInterval(interval); return 100; }
+        return prev + 30;
+      });
+    }, 1000);
   };
 
   return (
-    <div className="flex min-h-screen bg-[#F8FBF9] text-slate-900 font-sans">
-      {/* Sidebar - Fixed Proportion */}
-      <aside className="w-20 lg:w-64 bg-[#064E3B] text-white p-6 flex flex-col fixed h-full shadow-2xl">
-        <div className="flex items-center gap-3 mb-12">
-          <div className="bg-yellow-400 p-2 rounded-xl text-emerald-900"><Layers size={24}/></div>
-          <span className="hidden lg:block font-black text-xl tracking-tighter">AGRI-PRO</span>
+    <div className="flex min-h-screen bg-[#F0F5F2] text-slate-900 font-sans">
+      {/* Sidebar - Proportional */}
+      <aside className="w-20 lg:w-64 bg-[#052E16] text-white fixed h-full flex flex-col p-6 shadow-2xl z-20">
+        <div className="flex items-center gap-3 mb-10">
+          <div className="bg-yellow-400 p-2 rounded-xl text-green-950 shadow-lg"><Layers size={22}/></div>
+          <span className="hidden lg:block font-black text-xl tracking-tighter">UBER TANI</span>
         </div>
-        <nav className="space-y-2 flex-1">
-          <SideItem active={tab === 'optimasi'} icon={<Calculator/>} label="Optimasi Laba" onClick={() => setTab('optimasi')}/>
-          <SideItem active={tab === 'uber'} icon={<Truck/>} label="Uber Tani" onClick={() => setTab('uber')}/>
-          <SideItem active={tab === 'hilir'} icon={<ShoppingBag/>} label="Hilirisasi" onClick={() => setTab('hilir')}/>
+        <nav className="space-y-2">
+          <NavItem active={tab === 'optimasi'} icon={<Calculator/>} label="Optimasi Laba" onClick={() => {setTab('optimasi'); setActiveStep('input');}}/>
+          <NavItem active={tab === 'uber'} icon={<Truck/>} label="Layanan Uber" onClick={() => setTab('uber')}/>
+          <NavItem active={tab === 'hilir'} icon={<ShoppingBag/>} label="Marketplace" onClick={() => setTab('hilir')}/>
         </nav>
-        {cart.length > 0 && (
-          <div className="bg-white/10 p-4 rounded-2xl">
-            <p className="text-[10px] font-bold text-emerald-300">KERANJANG</p>
-            <p className="text-xl font-black">{cart.length} <span className="text-xs font-normal">Item</span></p>
-          </div>
-        )}
       </aside>
 
-      {/* Main Content Area */}
-      <main className="flex-1 ml-20 lg:ml-64 p-6 lg:p-10">
+      {/* Content Area */}
+      <main className="flex-1 ml-20 lg:ml-64 p-6 lg:p-12">
         
-        {/* TAB OPTIMASI */}
+        {/* SECTION: OPTIMASI LABA */}
         {tab === 'optimasi' && (
-          <div className="max-w-5xl mx-auto space-y-8">
-            <header className="flex justify-between items-end">
-              <div>
-                <h1 className="text-4xl font-black text-emerald-950 tracking-tight">Optimasi Laba</h1>
-                <p className="text-slate-500 font-medium">Hitung probabilitas keuntungan maksimal usaha tani Anda.</p>
-              </div>
-              <button 
-                onClick={handleOptimasiClick}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-4 rounded-2xl font-black shadow-xl transition-all active:scale-95"
-              >
-                {isPaid ? "HITUNG HASIL" : "BUKA OPTIMASI (Rp 5.000)"}
-              </button>
-            </header>
+          <div className="max-w-4xl mx-auto">
+            {activeStep === 'input' && (
+              <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+                <header className="flex justify-between items-center">
+                  <h1 className="text-3xl font-black text-green-950">Optimasi Laba</h1>
+                  <button onClick={handleRunOptimasi} className="bg-green-600 text-white px-8 py-4 rounded-2xl font-black shadow-lg hover:bg-green-700 transition">CEK HASIL (Rp 5rb)</button>
+                </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Input Variables */}
-              <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="font-black text-emerald-800 uppercase tracking-widest text-xs">Variabel Komoditas</h3>
-                  <button onClick={() => setTanaman([...tanaman, { id: Date.now(), nama: 'Tanaman Baru', profit: 0 }])} className="text-emerald-600 bg-emerald-50 p-2 rounded-full"><Plus size={18}/></button>
-                </div>
-                <div className="space-y-3">
-                  {tanaman.map((t, i) => (
-                    <div key={t.id} className="flex gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                      <input className="flex-1 bg-transparent font-bold outline-none" value={t.nama} onChange={e => {
-                        const n = [...tanaman]; n[i].nama = e.target.value; setTanaman(n);
-                      }}/>
-                      <input type="number" className="w-24 bg-white p-2 rounded-xl text-xs font-black shadow-sm" value={t.profit} onChange={e => {
-                        const n = [...tanaman]; n[i].profit = Number(e.target.value); setTanaman(n);
-                      }}/>
+                <div className="grid gap-6">
+                  {/* Variabel Tanaman */}
+                  <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-green-100">
+                    <div className="flex justify-between mb-6">
+                      <h3 className="font-black uppercase text-xs tracking-widest text-green-700">Variabel Keputusan</h3>
+                      <button onClick={() => setTanaman([...tanaman, { id: Date.now(), nama: 'Tanaman', profit: 0 }])} className="text-green-600 font-bold text-xs">+ Tambah</button>
                     </div>
-                  ))}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {tanaman.map((t, i) => (
+                        <div key={t.id} className="flex gap-2 bg-slate-50 p-3 rounded-xl border border-slate-100 items-center">
+                          <input className="flex-1 bg-transparent font-bold text-sm outline-none" value={t.nama} onChange={e => {
+                            const n = [...tanaman]; n[i].nama = e.target.value; setTanaman(n);
+                          }}/>
+                          <input type="number" className="w-20 bg-white p-1 rounded font-black text-xs text-green-600 outline-none" value={t.profit} onChange={e => {
+                            const n = [...tanaman]; n[i].profit = Number(e.target.value); setTanaman(n);
+                          }}/>
+                          <button onClick={() => setTanaman(tanaman.filter(x => x.id !== t.id))} className="text-slate-300 hover:text-red-500"><Trash2 size={14}/></button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Fungsi Kendala */}
+                  <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-green-100">
+                    <div className="flex justify-between mb-6">
+                      <h3 className="font-black uppercase text-xs tracking-widest text-green-700">Batasan Kendala</h3>
+                      <button onClick={() => setKendala([...kendala, { id: Date.now(), nama: 'Kendala', koefs: Array(tanaman.length).fill(0), target: 0, type: '<=' }])} className="text-green-600 font-bold text-xs">+ Tambah Kendala</button>
+                    </div>
+                    <div className="space-y-4">
+                      {kendala.map((k, i) => (
+                        <div key={k.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                          <div className="flex justify-between mb-4">
+                            <input className="font-black text-green-900 bg-transparent outline-none uppercase text-xs" value={k.nama} onChange={e => {
+                              const n = [...kendala]; n[i].nama = e.target.value; setKendala(n);
+                            }}/>
+                            <div className="flex items-center gap-2">
+                              <select className="bg-white px-2 py-1 rounded-lg text-xs font-bold outline-none" value={k.type} onChange={e => {
+                                const n = [...kendala]; n[i].type = e.target.value; setKendala(n);
+                              }}>
+                                <option value="<=">≤</option>
+                                <option value=">=">≥</option>
+                                <option value="=">=</option>
+                              </select>
+                              <input type="number" className="w-16 bg-white p-1 rounded font-black text-xs text-center" value={k.target} onChange={e => {
+                                const n = [...kendala]; n[i].target = Number(e.target.value); setKendala(n);
+                              }}/>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {tanaman.map((t, ti) => (
+                              <div key={ti} className="flex items-center gap-1 bg-white px-3 py-1 rounded-lg border border-slate-200">
+                                <span className="text-[10px] text-slate-400 font-bold uppercase">{t.nama}</span>
+                                <input type="number" className="w-8 text-center text-xs font-black text-green-600" value={k.koefs[ti]} onChange={e => {
+                                  const n = [...kendala]; n[i].koefs[ti] = Number(e.target.value); setKendala(n);
+                                }}/>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
+            )}
 
-              {/* Input Constraints */}
-              <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
-                <h3 className="font-black text-emerald-800 uppercase tracking-widest text-xs mb-6">Batasan Kendala</h3>
-                <div className="space-y-6">
-                  {kendala.map((k, i) => (
-                    <div key={k.id} className="space-y-3">
-                      <div className="flex justify-between items-center">
-                        <input className="font-bold text-sm bg-transparent outline-none" value={k.nama} onChange={e => {
-                          const n = [...kendala]; n[i].nama = e.target.value; setKendala(n);
-                        }}/>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-black text-emerald-600 px-2 py-1 bg-emerald-50 rounded-lg">{k.type}</span>
-                          <input type="number" className="w-16 p-1 border-b-2 border-emerald-100 font-black text-center outline-none" value={k.target} onChange={e => {
-                            const n = [...kendala]; n[i].target = Number(e.target.value); setKendala(n);
-                          }}/>
-                        </div>
+            {activeStep === 'payment' && (
+              <div className="max-w-md mx-auto text-center space-y-8 py-10 animate-in zoom-in-95">
+                <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-green-50">
+                  <h2 className="text-2xl font-black text-green-950 mb-2">QRIS Pembayaran</h2>
+                  <p className="text-slate-400 text-sm mb-8">Scan untuk melihat hasil optimasi</p>
+                  <div className="bg-slate-50 p-6 rounded-3xl inline-block border-2 border-slate-100 mb-8">
+                    <QrCode size={200} className="text-green-900 mx-auto"/>
+                  </div>
+                  <div className="bg-green-50 p-4 rounded-2xl mb-8">
+                    <p className="text-xs font-bold text-green-700">TOTAL TAGIHAN</p>
+                    <p className="text-2xl font-black text-green-900">Rp 5.000</p>
+                  </div>
+                  <button onClick={confirmPaymentOptimasi} className="w-full bg-green-900 text-white py-5 rounded-2xl font-black hover:bg-black transition shadow-xl">KONFIRMASI PEMBAYARAN</button>
+                </div>
+              </div>
+            )}
+
+            {activeStep === 'result' && hasil && (
+              <div className="space-y-8 animate-in slide-in-from-top-4">
+                <div className="bg-[#052E16] p-12 rounded-[3rem] text-white shadow-2xl relative overflow-hidden">
+                  <div className="relative z-10">
+                    <h2 className="text-yellow-400 font-black text-xs uppercase tracking-widest mb-6 flex items-center gap-2"><CheckCircle2 size={16}/> Hasil Optimal Ditemukan</h2>
+                    <div className="grid md:grid-cols-2 gap-10">
+                      <div>
+                        <p className="text-6xl font-black tracking-tighter">Rp {hasil.maxValue.toLocaleString()}</p>
+                        <p className="text-green-300 font-medium mt-2 uppercase text-[10px] tracking-widest">Estimasi Laba Maksimum</p>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        {tanaman.map((t, ti) => (
-                          <div key={ti} className="flex items-center gap-1 bg-slate-50 px-3 py-1 rounded-full border border-slate-200">
-                            <span className="text-[9px] font-bold text-slate-400">{t.nama}</span>
-                            <input type="number" className="w-8 text-center text-[10px] font-black bg-transparent" value={k.koefs[ti]} onChange={e => {
-                              const n = [...kendala]; n[i].koefs[ti] = Number(e.target.value); setKendala(n);
-                            }}/>
+                      <div className="space-y-3">
+                        {tanaman.map((t, i) => (
+                          <div key={i} className="flex justify-between bg-white/10 p-4 rounded-2xl border border-white/5">
+                            <span className="font-bold">{t.nama}</span>
+                            <span className="font-black text-yellow-400 text-xl">{hasil.solutions[i]?.toFixed(2)} Unit</span>
                           </div>
                         ))}
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {hasil && isPaid && (
-              <div className="bg-[#064E3B] p-10 rounded-[3rem] text-white shadow-2xl animate-in zoom-in-95 duration-500">
-                <h2 className="text-yellow-400 font-black text-xs uppercase tracking-[0.4em] mb-6">Hasil Rekomendasi Tanam</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
-                  <div>
-                    <p className="text-6xl font-black">Rp {hasil.maxValue.toLocaleString()}</p>
-                    <p className="text-emerald-300 font-medium mt-2">Potensi Laba Maksimal dari sumber daya yang ada.</p>
-                  </div>
-                  <div className="space-y-3">
-                    {tanaman.map((t, i) => (
-                      <div key={i} className="flex justify-between bg-white/10 p-4 rounded-2xl border border-white/10">
-                        <span className="font-bold">{t.nama}</span>
-                        <span className="font-black text-yellow-400 text-xl">{hasil.solutions[i]?.toFixed(2)} Unit</span>
-                      </div>
-                    ))}
                   </div>
                 </div>
+                <button onClick={() => setActiveStep('input')} className="text-green-700 font-bold flex items-center gap-2"><ArrowRight className="rotate-180"/> Kembali Edit Data</button>
               </div>
             )}
           </div>
         )}
 
-        {/* TAB UBER TANI */}
-        {tab === 'uber' && (
-          <div className="max-w-6xl mx-auto space-y-12">
+        {/* SECTION: UBER TANI & HILIRISASI */}
+        {(tab === 'uber' || tab === 'hilir') && (
+          <div className="max-w-6xl mx-auto space-y-10">
             <header>
-              <h1 className="text-4xl font-black text-emerald-950">Uber Tani Pro</h1>
-              <p className="text-slate-500 font-medium">Beli Bahan, Sewa Alat, dan Manajemen Jasa dalam satu genggaman.</p>
+              <h1 className="text-4xl font-black text-green-950 uppercase tracking-tight">{tab === 'uber' ? 'Uber Tani' : 'Marketplace'}</h1>
+              <p className="text-slate-500 font-medium">Layanan dan produk hilirisasi pertanian terbaik.</p>
             </header>
 
-            <section className="space-y-6">
-              <SectionHeader icon={<Package/>} title="Pembelian Bahan Tani"/>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {dataUber.bahan.map(item => <ProductCard key={item.id} item={item} onBuy={() => addToCart(item)} />)}
-              </div>
-            </section>
-
-            <section className="space-y-6">
-              <SectionHeader icon={<TrendingUp/>} title="Sewa Alat Modern"/>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {dataUber.alat.map(item => <ProductCard key={item.id} item={item} onBuy={() => addToCart(item)} />)}
-              </div>
-            </section>
-
-            <section className="space-y-6">
-              <SectionHeader icon={<Users/>} title="Manajemen Jasa & Tenaga"/>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {dataUber.jasa.map(item => <ProductCard key={item.id} item={item} onBuy={() => addToCart(item)} />)}
-              </div>
-            </section>
-          </div>
-        )}
-
-        {/* TAB HILIRISASI */}
-        {tab === 'hilir' && (
-          <div className="max-w-6xl mx-auto space-y-12">
-            <header>
-              <h1 className="text-4xl font-black text-emerald-950">Pasar Hilirisasi</h1>
-              <p className="text-slate-500 font-medium">Produk olahan tani terbaik langsung dari produsen.</p>
-            </header>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {dataHilir.map(item => (
-                <div key={item.id} className="bg-white rounded-[2rem] overflow-hidden shadow-sm border border-slate-100 p-4 space-y-4">
-                  <img src={item.img} className="h-40 w-full object-cover rounded-[1.5rem]" />
-                  <div>
-                    <h4 className="font-black text-emerald-900">{item.name}</h4>
-                    <p className="text-[10px] text-slate-400 font-medium">{item.desc}</p>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="font-black text-emerald-600">Rp {item.price.toLocaleString()}</span>
-                    <button onClick={() => addToCart(item)} className="p-2 bg-emerald-600 text-white rounded-xl shadow-lg"><ShoppingCart size={16}/></button>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {(tab === 'uber' ? dataUber : dataHilir).map(item => (
+                <div key={item.id} className="bg-white rounded-[2.5rem] overflow-hidden shadow-sm border border-slate-100 hover:shadow-xl transition-all group">
+                  <img src={item.img} className="h-48 w-full object-cover group-hover:scale-105 transition duration-500" />
+                  <div className="p-6 space-y-4">
+                    <div>
+                      <span className="text-[10px] font-black text-green-600 bg-green-50 px-2 py-1 rounded-md uppercase">{(item as any).cat || 'Produk'}</span>
+                      <h3 className="text-xl font-black text-green-950 mt-2">{item.name}</h3>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xl font-black text-green-900">Rp {item.price.toLocaleString()}</span>
+                      <button onClick={() => startCheckout(item)} className="bg-green-600 text-white px-5 py-2 rounded-xl font-black text-xs shadow-md">BELI SEKARANG</button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -249,33 +227,85 @@ export default function App() {
         )}
       </main>
 
-      {/* PAYMENT MODAL (Optimasi Paywall) */}
-      {showPaymentModal && (
-        <div className="fixed inset-0 bg-emerald-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-[3rem] p-10 text-center space-y-6 shadow-2xl animate-in fade-in zoom-in-95 duration-300">
-            <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto text-emerald-600 border-4 border-emerald-100">
-              <CreditCard size={32}/>
-            </div>
-            <div>
-              <h3 className="text-2xl font-black text-emerald-950">Layanan Berbayar</h3>
-              <p className="text-slate-500 text-sm mt-2 font-medium px-4">Anda perlu melakukan pembayaran sebesar <span className="text-emerald-600 font-black">Rp 5.000</span> untuk membuka fitur perhitungan optimasi laba.</p>
-            </div>
-            <div className="bg-slate-50 p-6 rounded-[2rem] space-y-4 border border-slate-100">
-              <div className="flex justify-between items-center text-sm font-bold">
-                <span className="text-slate-400 uppercase">Item</span>
-                <span>Optimasi Laba Pro</span>
+      {/* CHECKOUT & TRACKING MODAL */}
+      {checkoutItem && (
+        <div className="fixed inset-0 bg-green-950/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-xl rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in-95">
+            {orderProgress === 0 ? (
+              <div className="p-10 space-y-6">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-2xl font-black text-green-950 uppercase">Formulir Pesanan</h3>
+                  <button onClick={() => setCheckoutItem(null)} className="text-slate-300 hover:text-red-500"><X size={24}/></button>
+                </div>
+                
+                <div className="bg-slate-50 p-6 rounded-3xl flex gap-6 items-center border border-slate-100">
+                  <img src={checkoutItem.img} className="w-20 h-20 rounded-2xl object-cover shadow-sm" />
+                  <div>
+                    <p className="font-black text-green-950">{checkoutItem.name}</p>
+                    <p className="text-lg font-black text-green-600">Rp {checkoutItem.price.toLocaleString()}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Alamat Pengiriman Lengkap</label>
+                    <textarea 
+                      className="w-full bg-slate-50 p-4 rounded-2xl border-2 border-slate-100 outline-none focus:border-green-600 transition" 
+                      rows={3} 
+                      placeholder="Contoh: Jl. Sawah Besar No. 4, Nganjuk"
+                      value={checkoutItem.address}
+                      onChange={e => setCheckoutItem({...checkoutItem, address: e.target.value})}
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <button 
+                      onClick={() => setCheckoutItem({...checkoutItem, delivery: 'antar'})}
+                      className={`py-4 rounded-2xl font-black text-xs flex flex-col items-center gap-2 border-2 transition ${checkoutItem.delivery === 'antar' ? 'border-green-600 bg-green-50 text-green-950' : 'border-slate-100 text-slate-400'}`}
+                    >
+                      <TruckIcon size={20}/> ANTAR KE RUMAH
+                    </button>
+                    <button 
+                      onClick={() => setCheckoutItem({...checkoutItem, delivery: 'jemput'})}
+                      className={`py-4 rounded-2xl font-black text-xs flex flex-col items-center gap-2 border-2 transition ${checkoutItem.delivery === 'jemput' ? 'border-green-600 bg-green-50 text-green-950' : 'border-slate-100 text-slate-400'}`}
+                    >
+                      <Box size={20}/> JEMPUT SENDIRI
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-green-900 p-6 rounded-[2rem] text-white flex justify-between items-center shadow-xl">
+                  <div>
+                    <p className="text-[10px] opacity-60 font-bold uppercase tracking-widest">Total Bayar</p>
+                    <p className="text-2xl font-black">Rp {(checkoutItem.price + (checkoutItem.delivery === 'antar' ? 15000 : 0)).toLocaleString()}</p>
+                  </div>
+                  <button onClick={processOrder} className="bg-yellow-400 text-green-950 px-8 py-3 rounded-xl font-black hover:scale-105 transition active:scale-95">BAYAR SEKARANG</button>
+                </div>
               </div>
-              <div className="flex justify-between items-center text-lg font-black border-t pt-4">
-                <span className="text-slate-400 font-bold uppercase text-xs">Total</span>
-                <span className="text-emerald-700">Rp 5.000</span>
+            ) : (
+              <div className="p-16 text-center space-y-8 animate-in fade-in">
+                <div className="relative w-32 h-32 mx-auto">
+                   <div className="absolute inset-0 border-4 border-slate-100 rounded-full"></div>
+                   <div className="absolute inset-0 border-4 border-green-600 rounded-full border-t-transparent animate-spin"></div>
+                   <div className="absolute inset-0 flex items-center justify-center text-green-600 font-black text-xl">{orderProgress}%</div>
+                </div>
+                
+                <div>
+                  <h3 className="text-2xl font-black text-green-950 uppercase tracking-tight">
+                    {orderProgress < 100 ? 'Sedang Memproses Pesanan...' : 'Pesanan Berhasil!'}
+                  </h3>
+                  <p className="text-slate-400 text-sm mt-2">
+                    {orderProgress < 100 
+                      ? 'Harap tunggu, kami sedang memvalidasi pembayaran Anda.' 
+                      : `Kurir kami sedang menyiapkan ${checkoutItem.name} untuk dikirim.`}
+                  </p>
+                </div>
+
+                {orderProgress === 100 && (
+                  <button onClick={() => setCheckoutItem(null)} className="bg-green-900 text-white px-10 py-4 rounded-2xl font-black shadow-xl">KEMBALI KE BERANDA</button>
+                )}
               </div>
-            </div>
-            <div className="flex flex-col gap-3">
-              <button onClick={simulatePayment} className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black shadow-xl shadow-emerald-100 flex items-center justify-center gap-3 active:scale-95 transition">
-                BAYAR SEKARANG <ChevronRight size={18}/>
-              </button>
-              <button onClick={() => setShowPaymentModal(false)} className="text-slate-400 font-bold text-xs uppercase tracking-widest hover:text-red-500 transition">Batalkan</button>
-            </div>
+            )}
           </div>
         </div>
       )}
@@ -283,53 +313,13 @@ export default function App() {
   );
 }
 
-// --- SUB-COMPONENTS ---
-
-function SideItem({ icon, label, active, onClick }: any) {
+// --- HELPERS ---
+function NavItem({ active, icon, label, onClick }: any) {
   return (
-    <button onClick={onClick} className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all ${active ? 'bg-white/10 text-yellow-400 shadow-inner' : 'text-emerald-100/60 hover:bg-white/5 hover:text-white'}`}>
-      {icon} <span className="hidden lg:block text-sm font-black tracking-tight">{label}</span>
+    <button onClick={onClick} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black transition-all ${active ? 'bg-white/10 text-yellow-400 shadow-inner' : 'text-green-100/60 hover:bg-white/5 hover:text-white'}`}>
+      {icon} <span className="hidden lg:block text-sm uppercase tracking-tighter">{label}</span>
     </button>
   );
 }
 
-function SectionHeader({ icon, title }: any) {
-  return (
-    <div className="flex items-center gap-4 border-b border-slate-200 pb-4">
-      <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg">{icon}</div>
-      <h2 className="text-xl font-black text-emerald-900 uppercase tracking-tight">{title}</h2>
-    </div>
-  );
-}
-
-function ProductCard({ item, onBuy }: any) {
-  const [mode, setMode] = useState<'langsung' | 'gabung'>('langsung');
-
-  return (
-    <div className="bg-white rounded-[2.5rem] overflow-hidden shadow-sm border border-slate-100 hover:shadow-xl transition-all group flex flex-col h-full">
-      <div className="h-48 overflow-hidden relative">
-        <img src={item.img} className="w-full h-full object-cover group-hover:scale-110 transition duration-700" />
-        <div className="absolute top-4 left-4 bg-white/90 backdrop-blur px-3 py-1 rounded-full text-[10px] font-black uppercase text-emerald-700">Verified</div>
-      </div>
-      <div className="p-6 space-y-4 flex flex-col flex-1">
-        <div className="flex-1">
-          <h3 className="text-lg font-black text-emerald-950 leading-tight">{item.name}</h3>
-          <p className="text-[11px] text-slate-400 font-medium mt-1">{item.desc}</p>
-        </div>
-        
-        <div className="flex justify-between items-center mb-2">
-          <span className="font-black text-emerald-600 text-xl tracking-tight">Rp {item.price.toLocaleString()}</span>
-        </div>
-
-        <div className="bg-slate-50 p-1 rounded-xl flex">
-          <button onClick={() => setMode('langsung')} className={`flex-1 py-2 rounded-lg text-[9px] font-black tracking-widest ${mode === 'langsung' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400'}`}>LANGSUNG</button>
-          <button onClick={() => setMode('gabung')} className={`flex-1 py-2 rounded-lg text-[9px] font-black tracking-widest ${mode === 'gabung' ? 'bg-yellow-400 text-emerald-900 shadow-md' : 'text-slate-400'}`}>GABUNG (UB)</button>
-        </div>
-
-        <button onClick={onBuy} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs flex items-center justify-center gap-2 hover:bg-black transition">
-          <CreditCard size={14}/> BELI SEKARANG
-        </button>
-      </div>
-    </div>
-  );
-}
+function X({size}: {size:number}) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>; }
