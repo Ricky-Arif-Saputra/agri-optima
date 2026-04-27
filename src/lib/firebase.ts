@@ -3,12 +3,12 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSy... (PASTE API KEY ASLI KAMU DI SINI)",
+  apiKey: "AIzaSyAh1y1fn0VxL_juhfdsIKCyePyNSeR6z6k",
   authDomain: "agri-optima-2026.firebaseapp.com",
   projectId: "agri-optima-2026",
   storageBucket: "agri-optima-2026.firebasestorage.app",
-  messagingSenderId: "TULIS SENDER ID KAMU",
-  appId: "TULIS APP ID KAMU"
+  messagingSenderId: "263003282029",
+  appId: "1:263003282029:web:6e64c721ca62abdd69bd64"
 };
 
 const app = initializeApp(firebaseConfig);
