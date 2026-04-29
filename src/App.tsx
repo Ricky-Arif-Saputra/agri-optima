@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 // FIREBASE
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword } from "firebase/auth";
-import { getFirestore, doc, setDoc, onSnapshot, collection, addDoc, query, where, orderBy } from "firebase/firestore";
+import { getFirestore, doc, setDoc, onSnapshot, collection, addDoc, query, where, orderBy, Timestamp } from "firebase/firestore";
 
 // CONFIGURASI FIREBASE RICKY
 const firebaseConfig = {
@@ -23,29 +23,33 @@ import {
   Calculator, Truck, ShoppingBag, Plus, Trash2, Layers, 
   CheckCircle2, TrendingUp, Package, Box, QrCode, LogOut, 
   UserCheck, TruckIcon, X, ArrowRight, Info, MapPin, Search, 
-  PlusCircle, MinusCircle, Upload, ClipboardCheck, Clock, CreditCard, Menu
+  PlusCircle, MinusCircle, Upload, ClipboardCheck, Clock, CreditCard, Menu, Home, 
+  Store, History, User, ChevronRight, Image as ImageIcon
 } from 'lucide-react';
 import { SimplexSolver } from './lib/simplex';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [tab, setTab] = useState('optimasi');
-  const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [uberCategory, setUberCategory] = useState<'bahan' | 'alat' | 'jasa'>('bahan');
   
   // STEP STATES
   const [activeStep, setActiveStep] = useState<'input' | 'payment' | 'upload' | 'result'>('input');
-  const [checkoutStep, setCheckoutStep] = useState<'options' | 'qris' | 'success'>('options');
+  const [checkoutStep, setCheckoutStep] = useState<'options' | 'qris' | 'loading'>('options');
   
   // DATA STATES
   const [checkoutItem, setCheckoutItem] = useState<any>(null);
   const [userOrders, setUserOrders] = useState<any[]>([]);
-  const [proofFile, setProofFile] = useState<any>(null);
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  
+  // FORM STATES
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
   // --- STATE OPTIMASI ---
   const [tanaman, setTanaman] = useState([{ id: 1, nama: 'Padi', profit: 15000000 }]);
-  const [kendala, setKendala] = useState([{ id: 1, nama: 'Luas Lahan (Ha)', koefs: [1], target: 10, type: '<=' }]);
+  const [kendala, setKendala] = useState([{ id: 1, nama: 'Lahan (Ha)', koefs: [1], target: 10, type: '<=' }]);
   const [hasil, setHasil] = useState<any>(null);
 
   // AUTH & ORDER OBSERVER
@@ -63,7 +67,14 @@ export default function App() {
     return unsub;
   }, []);
 
-  // LOGIKA AUTH
+  // Handle Image Preview
+  useEffect(() => {
+    if (!proofFile) { setPreviewUrl(null); return; }
+    const url = URL.createObjectURL(proofFile);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [proofFile]);
+
   const handleAuth = async (type: 'login' | 'reg') => {
     try {
       if (type === 'login') await signInWithEmailAndPassword(auth, email, password);
@@ -74,39 +85,53 @@ export default function App() {
     } catch (err: any) { alert("Error: " + err.message); }
   };
 
-  // LOGIKA SIMPLEX
   const solveSimplex = () => {
-    const N = tanaman.length;
-    const M1 = kendala.filter(c => c.type === '<=').length;
-    const M2 = kendala.filter(c => c.type === '>=').length;
-    const M3 = kendala.filter(c => c.type === '=').length;
-    const sortedK = [...kendala.filter(c => c.type === '<='), ...kendala.filter(c => c.type === '>='), ...kendala.filter(c => c.type === '=')];
-    const A: any = Array.from({ length: sortedK.length + 3 }, () => new Array(N + 2).fill(0));
-    tanaman.forEach((t, j) => A[1][j + 2] = t.profit);
-    sortedK.forEach((c, i) => {
-      A[i + 2][1] = c.target;
-      c.koefs.forEach((val, j) => { A[i + 2][j + 2] = -val; });
-    });
-    setHasil(SimplexSolver.solve(N, M1, M2, M3, A));
-    setActiveStep('result');
+    try {
+      const N = tanaman.length;
+      const sortedK = [...kendala.filter(c => c.type === '<='), ...kendala.filter(c => c.type === '>='), ...kendala.filter(c => c.type === '=')];
+      const A: any = Array.from({ length: sortedK.length + 3 }, () => new Array(N + 2).fill(0));
+      tanaman.forEach((t, j) => A[1][j + 2] = t.profit);
+      sortedK.forEach((c, i) => {
+        A[i + 2][1] = c.target;
+        c.koefs.forEach((val, j) => { A[i + 2][j + 2] = -val; });
+      });
+      setHasil(SimplexSolver.solve(N, kendala.filter(c=>c.type==='<=').length, kendala.filter(c=>c.type==='>=').length, kendala.filter(c=>c.type==='=').length, A));
+      setActiveStep('result');
+    } catch (e) { alert("Hitungan Gagal: Cek kembali input anda."); }
   };
 
-  // SUBMIT ORDER KE FIREBASE
-  const submitFinalOrder = async () => {
-    if (!proofFile) return alert("Silakan upload bukti transfer terlebih dahulu!");
+  const submitOrder = async (isOptimasi = false) => {
+    if (!previewUrl) return alert("Wajib upload bukti transfer!");
     
-    await addDoc(collection(db, "orders"), {
-      userId: user.uid,
+    setCheckoutStep('loading');
+    const orderData = isOptimasi ? {
+      itemName: 'Layanan Optimasi Laba',
+      total: 5000,
+      qty: 1,
+      status: 'Pesanan Diterima'
+    } : {
       itemName: checkoutItem.name,
-      qty: checkoutItem.qty,
       total: checkoutItem.totalPrice,
-      status: 'Verifikasi', // Status Awal
-      purchaseType: checkoutItem.purchaseType || 'Normal',
+      qty: checkoutItem.qty,
+      status: 'Pesanan Diterima',
       deliveryMode: checkoutItem.deliveryMode || 'Default',
-      createdAt: new Date(),
-      address: checkoutItem.address || ''
+      type: checkoutItem.type
+    };
+
+    await addDoc(collection(db, "orders"), {
+      ...orderData,
+      userId: user.uid,
+      createdAt: Timestamp.now(),
+      proof: 'uploaded_preview_mode' // In real app, upload to storage first
     });
-    setCheckoutStep('success');
+
+    setTimeout(() => {
+      setCheckoutItem(null);
+      setProofFile(null);
+      setCheckoutStep('options');
+      if (isOptimasi) solveSimplex();
+      else setTab('riwayat');
+    }, 1500);
   };
 
   // DATA MASTER
@@ -119,27 +144,27 @@ export default function App() {
       { id: 'a1', name: 'Sewa Traktor G1000', price: 1200000, img: 'https://images.unsplash.com/photo-1592982537447-7440770cbfc9?w=400', desc: 'Sewa harian traktor pembajak.' }
     ],
     jasa: [
-      { id: 'j1', name: 'Regu Tanam Pro', price: 300000, img: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=400', desc: 'Jasa tanam padi borongan.' }
+      { id: 'j1', name: 'Manajemen Hama Pro', price: 500000, img: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=400', desc: 'Pemantauan rutin lahan.' }
     ]
   };
 
   const dataHilir = [
-    { id: 'h1', name: 'Beras Premium 10kg', price: 165000, img: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400', desc: 'Beras pulen hasil petani lokal.' }
+    { id: 'h1', name: 'Beras Premium 10kg', price: 165000, img: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400', desc: 'Hasil petani binaan lokal.' }
   ];
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#052E16] flex items-center justify-center p-4 font-sans">
-        <div className="bg-white w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl">
+      <div className="min-h-screen bg-[#052E16] flex items-center justify-center p-6 font-sans">
+        <div className="bg-white w-full max-w-md rounded-[3rem] p-12 shadow-2xl">
           <div className="text-center mb-10">
-            <h1 className="text-3xl font-black text-green-900 italic">AGRI-OPTIMA</h1>
-            <p className="text-xs font-bold text-slate-400 mt-1">SMART FARMING SYSTEM</p>
+            <h1 className="text-4xl font-black text-green-900 tracking-tighter italic">AGRI-OPTIMA</h1>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">Sustainable Farming</p>
           </div>
           <div className="space-y-4">
-            <input type="email" placeholder="Email" className="w-full p-4 bg-slate-50 rounded-2xl border outline-none focus:ring-2 ring-green-500 transition" onChange={e => setEmail(e.target.value)} />
-            <input type="password" placeholder="Password" className="w-full p-4 bg-slate-50 rounded-2xl border outline-none focus:ring-2 ring-green-500 transition" onChange={e => setPassword(e.target.value)} />
-            <button onClick={() => handleAuth('login')} className="w-full bg-green-700 text-white py-4 rounded-2xl font-black shadow-lg hover:bg-green-800 transition">LOGIN</button>
-            <button onClick={() => handleAuth('reg')} className="w-full text-green-700 font-bold text-sm">Daftar Akun Baru</button>
+            <input type="email" placeholder="Email" className="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 ring-green-600" onChange={e => setEmail(e.target.value)} />
+            <input type="password" placeholder="Password" className="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 ring-green-600" onChange={e => setPassword(e.target.value)} />
+            <button onClick={() => handleAuth('login')} className="w-full bg-green-700 text-white py-4 rounded-2xl font-black shadow-xl hover:bg-green-800 transition">LOGIN</button>
+            <button onClick={() => handleAuth('reg')} className="w-full text-green-700 font-bold text-xs">DAFTAR AKUN BARU</button>
           </div>
         </div>
       </div>
@@ -147,174 +172,185 @@ export default function App() {
   }
 
   return (
-    <div className="flex min-h-screen bg-[#F4F7F5] font-sans text-slate-900 overflow-x-hidden">
+    <div className="min-h-screen bg-[#F8FAF9] font-sans text-slate-900 pb-32">
       
-      {/* SIDEBAR (Responsive) */}
-      <aside className={`${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static w-72 bg-[#052E16] text-white h-full min-h-screen p-8 flex flex-col z-50 transition-transform duration-300 shadow-2xl`}>
-        <div className="flex justify-between items-center mb-12">
-          <div className="flex items-center gap-2">
-             <div className="bg-yellow-400 p-2 rounded-xl text-green-900"><Layers size={20}/></div>
-             <span className="font-black text-xl italic">AGRI-OPTIMA</span>
-          </div>
-          <button className="lg:hidden" onClick={() => setSidebarOpen(false)}><X/></button>
+      {/* --- HEADER --- */}
+      <header className="bg-white p-6 sticky top-0 z-40 border-b flex justify-between items-center shadow-sm">
+        <div className="flex items-center gap-2">
+           <div className="bg-green-900 p-2 rounded-xl text-yellow-400"><Layers size={18}/></div>
+           <h2 className="font-black text-xl italic tracking-tight text-green-950">AGRI-OPTIMA</h2>
         </div>
-        <nav className="space-y-2 flex-1">
-          <SideBtn active={tab==='optimasi'} icon={<Calculator/>} label="Optimasi Laba" onClick={()=>{setTab('optimasi'); setSidebarOpen(false);}}/>
-          <SideBtn active={tab==='uber'} icon={<Truck/>} label="Uber Tani" onClick={()=>{setTab('uber'); setSidebarOpen(false);}}/>
-          <SideBtn active={tab==='hilir'} icon={<ShoppingBag/>} label="Hilirisasi" onClick={()=>{setTab('hilir'); setSidebarOpen(false);}}/>
-          <SideBtn active={tab==='pesanan'} icon={<ClipboardCheck/>} label="Riwayat Pesanan" onClick={()=>{setTab('pesanan'); setSidebarOpen(false);}}/>
-        </nav>
-        <button onClick={()=>signOut(auth)} className="flex items-center gap-3 text-red-400 font-black text-xs uppercase p-4 hover:bg-white/5 rounded-2xl"><LogOut size={18}/> Keluar</button>
-      </aside>
+        <button onClick={()=>signOut(auth)} className="p-2 bg-red-50 text-red-500 rounded-xl"><LogOut size={20}/></button>
+      </header>
 
-      {/* MAIN CONTENT */}
-      <main className="flex-1 p-4 md:p-10 lg:p-12 w-full">
-        {/* Mobile Header */}
-        <header className="lg:hidden flex justify-between items-center mb-8">
-          <h2 className="font-black text-green-900">AGRI-OPTIMA</h2>
-          <button onClick={() => setSidebarOpen(true)} className="p-2 bg-white rounded-xl shadow-md"><Menu/></button>
-        </header>
-
+      <main className="p-4 md:p-8 max-w-5xl mx-auto">
+        
         {/* --- TAB OPTIMASI --- */}
         {tab === 'optimasi' && (
-          <div className="max-w-5xl mx-auto space-y-6">
+          <div className="space-y-6">
             {activeStep === 'input' && (
-               <div className="space-y-8 animate-in fade-in">
-                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div>
-                       <h1 className="text-4xl font-black text-green-950 uppercase tracking-tighter">Optimasi Laba</h1>
-                       <p className="text-slate-500 font-medium">Hitung alokasi lahan terbaik untuk hasil maksimal.</p>
-                    </div>
-                    <button onClick={()=>setActiveStep('payment')} className="w-full md:w-auto bg-green-600 text-white px-8 py-4 rounded-2xl font-black shadow-xl">ANALISIS SEKARANG</button>
-                 </div>
-                 <div className="grid lg:grid-cols-2 gap-6">
-                    <CardContainer title="Fungsi Tujuan (Profit)" onAdd={()=>setTanaman([...tanaman, {id:Date.now(), nama:'', profit:0}])}>
-                       {tanaman.map((t, i) => (
-                         <div key={t.id} className="flex gap-2 bg-slate-50 p-3 rounded-xl border">
-                           <input placeholder="Nama" className="flex-1 bg-transparent font-bold" value={t.nama} onChange={e=>{const n=[...tanaman]; n[i].nama=e.target.value; setTanaman(n);}}/>
-                           <input type="number" className="w-24 bg-white px-2 rounded-lg font-black text-green-600" value={t.profit} onChange={e=>{const n=[...tanaman]; n[i].profit=Number(e.target.value); setTanaman(n);}}/>
-                         </div>
-                       ))}
-                    </CardContainer>
-                    <CardContainer title="Fungsi Kendala" onAdd={()=>setKendala([...kendala, {id:Date.now(), nama:'', koefs:Array(tanaman.length).fill(0), target:0, type:'<='}])}>
-                       {kendala.map((k, i) => (
-                         <div key={k.id} className="p-4 bg-slate-50 rounded-2xl border space-y-3">
-                           <div className="flex justify-between items-center">
-                             <input className="font-black text-xs uppercase" value={k.nama} onChange={e=>{const n=[...kendala]; n[i].nama=e.target.value; setKendala(n);}}/>
-                             <input type="number" className="w-12 text-center rounded-lg" value={k.target} onChange={e=>{const n=[...kendala]; n[i].target=Number(e.target.value); setKendala(n);}}/>
-                           </div>
-                           <div className="flex flex-wrap gap-2">
-                             {tanaman.map((t, ti) => (
-                               <input key={ti} type="number" className="w-10 p-1 rounded-lg text-center text-xs border" value={k.koefs[ti]} onChange={e=>{const n=[...kendala]; n[i].koefs[ti]=Number(e.target.value); setKendala(n);}} />
-                             ))}
-                           </div>
-                         </div>
-                       ))}
-                    </CardContainer>
-                 </div>
-               </div>
+              <div className="animate-in fade-in">
+                <div className="mb-8">
+                  <h1 className="text-3xl font-black text-green-950">OPTIMASI LABA</h1>
+                  <p className="text-slate-500 text-sm">Gunakan algoritma Simplex untuk hasil panen terbaik.</p>
+                </div>
+                <div className="grid md:grid-cols-2 gap-6">
+                  <InputCard title="Fungsi Tujuan" onAdd={()=>setTanaman([...tanaman, {id:Date.now(), nama:'', profit:0}])}>
+                    {tanaman.map((t, i) => (
+                      <div key={t.id} className="flex gap-2 bg-slate-50 p-3 rounded-2xl border">
+                        <input placeholder="Tanaman" className="flex-1 bg-transparent font-bold text-sm" value={t.nama} onChange={e=>{const n=[...tanaman]; n[i].nama=e.target.value; setTanaman(n);}}/>
+                        <div className="flex items-center bg-white px-2 rounded-xl">
+                          <span className="text-[10px] font-black text-slate-400 mr-1">Rp</span>
+                          <input type="number" className="w-20 font-black text-green-600 text-sm" value={t.profit} onChange={e=>{const n=[...tanaman]; n[i].profit=Number(e.target.value); setTanaman(n);}}/>
+                        </div>
+                      </div>
+                    ))}
+                  </InputCard>
+                  <InputCard title="Batasan Kendala" onAdd={()=>setKendala([...kendala, {id:Date.now(), nama:'', koefs:Array(tanaman.length).fill(0), target:0, type:'<='}])}>
+                    {kendala.map((k, i) => (
+                      <div key={k.id} className="p-4 bg-slate-50 rounded-2xl border space-y-3">
+                        <div className="flex justify-between items-center">
+                          <input className="font-black text-xs uppercase bg-transparent" value={k.nama} onChange={e=>{const n=[...kendala]; n[i].nama=e.target.value; setKendala(n);}}/>
+                          <input type="number" className="w-16 bg-white rounded-lg text-center font-black text-xs p-1" value={k.target} onChange={e=>{const n=[...kendala]; n[i].target=Number(e.target.value); setKendala(n);}}/>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {tanaman.map((t, ti) => (
+                            <div key={ti} className="bg-white px-2 py-1 rounded-lg border text-[10px] flex items-center gap-1">
+                              <span className="text-slate-400 uppercase font-bold">{t.nama?.slice(0,3)}</span>
+                              <input type="number" className="w-8 text-center font-black" value={k.koefs[ti]} onChange={e=>{const n=[...kendala]; n[i].koefs[ti]=Number(e.target.value); setKendala(n);}} />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </InputCard>
+                </div>
+                <button onClick={()=>setActiveStep('payment')} className="w-full mt-8 bg-green-900 text-white py-5 rounded-[2rem] font-black shadow-2xl hover:scale-[1.02] transition">MULAI ANALISIS</button>
+              </div>
             )}
 
-            {activeStep === 'payment' && (
-              <div className="max-w-md mx-auto bg-white p-8 md:p-12 rounded-[3rem] shadow-2xl text-center space-y-6">
-                <h3 className="font-black text-xl">PEMBAYARAN LAYANAN</h3>
-                <div className="bg-slate-50 p-6 rounded-3xl border-2 border-dashed border-slate-200">
-                   <QrCode size={200} className="mx-auto text-green-900"/>
+            {(activeStep === 'payment' || activeStep === 'upload') && (
+              <div className="max-w-md mx-auto bg-white p-8 rounded-[3rem] shadow-2xl text-center space-y-6 animate-in zoom-in-95">
+                <h3 className="font-black text-xl italic">AGRI-PAY</h3>
+                <div className="bg-slate-50 p-6 rounded-[2.5rem] border-2 border-dashed border-slate-200 inline-block">
+                  <QrCode size={180} className="text-green-950"/>
                 </div>
                 <div className="bg-green-50 p-4 rounded-2xl">
-                   <p className="text-[10px] font-black text-green-600 uppercase">Total Biaya</p>
-                   <p className="text-3xl font-black text-green-950">Rp 5.000</p>
+                   <p className="text-[10px] font-black text-green-600 uppercase tracking-widest">Biaya Konsultasi</p>
+                   <p className="text-3xl font-black text-green-950 tracking-tighter">Rp 5.000</p>
                 </div>
-                <button onClick={()=>setActiveStep('upload')} className="w-full bg-green-900 text-white py-4 rounded-2xl font-black shadow-lg">SAYAN SUDAH BAYAR</button>
+
+                {previewUrl ? (
+                  <div className="space-y-4">
+                    <div className="relative group">
+                      <img src={previewUrl} className="w-full h-48 object-cover rounded-3xl border-4 border-green-100 shadow-md" />
+                      <button onClick={()=>setProofFile(null)} className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-full"><X size={16}/></button>
+                    </div>
+                    <button onClick={()=>submitOrder(true)} className="w-full bg-green-600 text-white py-4 rounded-2xl font-black shadow-xl">KONFIRMASI BUKTI</button>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center p-10 border-4 border-dashed rounded-[2.5rem] cursor-pointer hover:bg-slate-50 transition border-slate-200">
+                    <ImageIcon className="text-slate-300 mb-2" size={40}/>
+                    <span className="font-black text-xs text-slate-400 uppercase">Upload Bukti Transfer</span>
+                    <input type="file" className="hidden" accept="image/*" onChange={e=>setProofFile(e.target.files?.[0] || null)} />
+                  </label>
+                )}
                 <button onClick={()=>setActiveStep('input')} className="text-slate-400 font-bold text-xs uppercase">Batal</button>
               </div>
             )}
 
-            {activeStep === 'upload' && (
-              <div className="max-w-md mx-auto bg-white p-8 md:p-12 rounded-[3rem] shadow-2xl text-center space-y-6">
-                <h3 className="font-black text-xl uppercase">UPLOAD BUKTI TF</h3>
-                <label className="flex flex-col items-center p-10 border-4 border-dashed rounded-[2.5rem] cursor-pointer hover:bg-slate-50 transition">
-                   <Upload className="text-green-600 mb-4" size={40}/>
-                   <span className="font-black text-xs text-slate-400 uppercase">Pilih Foto Bukti Transaksi</span>
-                   <input type="file" className="hidden" onChange={(e) => setProofFile(e.target.files?.[0])} />
-                </label>
-                {proofFile && <p className="text-green-600 font-bold text-xs">File Terpilih: {proofFile.name}</p>}
-                <button onClick={solveSimplex} className={`w-full py-4 rounded-2xl font-black transition ${proofFile ? 'bg-green-600 text-white shadow-xl' : 'bg-slate-200 text-slate-400 pointer-events-none'}`}>KONFIRMASI & LIHAT HASIL</button>
-              </div>
-            )}
-
             {activeStep === 'result' && hasil && (
-              <div className="animate-in slide-in-from-top-10 duration-700 space-y-6">
-                 <div className="bg-[#052E16] p-8 md:p-12 rounded-[3.5rem] text-white shadow-2xl">
-                    <div className="flex justify-between items-start mb-10">
-                      <div>
-                        <span className="bg-yellow-400 text-green-900 px-3 py-1 rounded-full text-[10px] font-black uppercase">Hasil Analisis</span>
-                        <h2 className="text-5xl font-black tracking-tighter mt-4">Rp {hasil.maxValue.toLocaleString()}</h2>
-                        <p className="text-green-400 font-bold text-xs mt-1">KEUNTUNGAN MAKSIMAL PER MUSIM</p>
+              <div className="animate-in slide-in-from-top-8 space-y-6">
+                 <div className="bg-[#052E16] p-10 rounded-[3.5rem] text-white shadow-2xl relative overflow-hidden">
+                    <div className="relative z-10">
+                      <div className="bg-yellow-400 text-green-950 px-4 py-1 rounded-full text-[10px] font-black uppercase inline-block mb-6">OPTIMAL FOUND</div>
+                      <h2 className="text-5xl font-black tracking-tighter">Rp {hasil.maxValue.toLocaleString()}</h2>
+                      <p className="text-green-400 font-bold text-xs uppercase mt-1">Estimasi Laba Maksimum</p>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-10">
+                        {tanaman.map((t, i) => (
+                          <div key={i} className="bg-white/10 p-6 rounded-3xl border border-white/5">
+                            <p className="text-[10px] font-black text-green-400 uppercase">Rekomendasi</p>
+                            <p className="font-black text-xl">{t.nama}</p>
+                            <p className="text-3xl font-black text-yellow-400 mt-2">{hasil.solutions[i]?.toFixed(2)} <span className="text-xs text-white opacity-40">Unit/Ha</span></p>
+                          </div>
+                        ))}
                       </div>
-                      <TrendingUp size={48} className="text-yellow-400 opacity-50"/>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                       {tanaman.map((t, i) => (
-                         <div key={i} className="bg-white/10 p-6 rounded-3xl border border-white/5 backdrop-blur-md">
-                           <p className="text-[10px] font-black text-green-400 uppercase mb-1">Rekomendasi Lahan</p>
-                           <p className="font-black text-xl">{t.nama}</p>
-                           <p className="text-3xl font-black text-yellow-400 mt-2">{hasil.solutions[i]?.toFixed(2)} <span className="text-xs text-white opacity-40">Ha</span></p>
-                         </div>
-                       ))}
                     </div>
                  </div>
-                 <button onClick={()=>setActiveStep('input')} className="mx-auto block text-green-700 font-black flex items-center gap-2"><ArrowRight className="rotate-180"/> ULANGI HITUNG</button>
+                 <button onClick={()=>setActiveStep('input')} className="mx-auto block text-green-700 font-black flex items-center gap-2"><ArrowRight className="rotate-180"/> ANALISIS ULANG</button>
               </div>
             )}
           </div>
         )}
 
-        {/* --- TAB UBER & HILIR --- */}
-        {(tab === 'uber' || tab === 'hilir') && (
-          <div className="max-w-6xl mx-auto space-y-12">
-            <header>
-               <h1 className="text-4xl md:text-5xl font-black text-green-950 tracking-tighter uppercase">{tab} Tani</h1>
-               <p className="text-slate-500 font-medium">Solusi lengkap kebutuhan hulu ke hilir pertanian.</p>
-            </header>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
-              {tab === 'uber' ? (
-                <>
-                  {dataUber.bahan.map(it => <ProductCard key={it.id} item={it} type="bahan" onBuy={(x)=>setCheckoutItem({...x, qty:1, type:'bahan', purchaseType:'Langsung', totalPrice: x.price})}/>)}
-                  {dataUber.alat.map(it => <ProductCard key={it.id} item={it} type="alat" onBuy={(x)=>setCheckoutItem({...x, qty:1, type:'alat', deliveryMode:'Ambil Sendiri', totalPrice: x.price})}/>)}
-                  {dataUber.jasa.map(it => <ProductCard key={it.id} item={it} type="jasa" onBuy={(x)=>setCheckoutItem({...x, qty:1, type:'jasa', totalPrice: x.price})}/>)}
-                </>
-              ) : (
-                dataHilir.map(it => <ProductCard key={it.id} item={it} onBuy={(x)=>setCheckoutItem({...x, qty:1, totalPrice: x.price})}/>)
-              )}
+        {/* --- TAB UBER TANI --- */}
+        {tab === 'uber' && (
+          <div className="space-y-8 animate-in fade-in">
+            <div className="flex flex-col gap-4">
+              <h1 className="text-3xl font-black text-green-950 uppercase">Uber Tani</h1>
+              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                <FilterBtn active={uberCategory==='bahan'} label="Bahan Bakunya" icon={<Package size={16}/>} onClick={()=>setUberCategory('bahan')}/>
+                <FilterBtn active={uberCategory==='alat'} label="Sewa Alat" icon={<TruckIcon size={16}/>} onClick={()=>setUberCategory('alat')}/>
+                <FilterBtn active={uberCategory==='jasa'} label="Manajemen" icon={<UserCheck size={16}/>} onClick={()=>setUberCategory('jasa')}/>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+               {dataUber[uberCategory].map((it: any) => (
+                 <ProductCard key={it.id} item={it} onBuy={(x:any)=>setCheckoutItem({...x, qty:1, type: uberCategory, purchaseType: 'Normal', totalPrice: x.price})}/>
+               ))}
             </div>
           </div>
         )}
 
-        {/* --- TAB PESANAN --- */}
-        {tab === 'pesanan' && (
-          <div className="max-w-4xl mx-auto space-y-8">
-            <h1 className="text-4xl font-black text-green-950 uppercase tracking-tighter">Riwayat Pesanan</h1>
+        {/* --- TAB HILIRISASI --- */}
+        {tab === 'hilir' && (
+          <div className="space-y-8 animate-in fade-in">
+            <h1 className="text-3xl font-black text-green-950 uppercase">Hilirisasi</h1>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+               {dataHilir.map(it => (
+                 <ProductCard key={it.id} item={it} onBuy={(x:any)=>setCheckoutItem({...x, qty:1, type: 'hilir', deliveryMode:'Ambil Sendiri', totalPrice: x.price})}/>
+               ))}
+            </div>
+          </div>
+        )}
+
+        {/* --- TAB RIWAYAT --- */}
+        {tab === 'riwayat' && (
+          <div className="space-y-6 animate-in fade-in">
+            <h1 className="text-3xl font-black text-green-950 uppercase">Pesanan Saya</h1>
             <div className="space-y-4">
                {userOrders.length === 0 ? (
-                 <div className="text-center py-20 bg-white rounded-3xl border border-dashed text-slate-400 font-bold">Belum ada pesanan aktif.</div>
+                 <div className="p-20 text-center bg-white rounded-3xl border border-dashed text-slate-300 font-bold">Belum ada aktivitas.</div>
                ) : (
                  userOrders.map((ord: any) => (
-                   <div key={ord.id} className="bg-white p-6 rounded-3xl shadow-sm border space-y-4">
-                      <div className="flex justify-between items-start">
+                   <div key={ord.id} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                      <div className="flex justify-between items-start mb-4">
                         <div>
-                          <p className="font-black text-lg">{ord.itemName}</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase">{ord.createdAt?.toDate().toLocaleDateString()}</p>
+                           <p className="font-black text-lg text-green-950 leading-tight">{ord.itemName}</p>
+                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{ord.createdAt?.toDate().toLocaleString()}</p>
                         </div>
-                        <div className={`px-4 py-1 rounded-full text-[10px] font-black uppercase ${ord.status === 'Selesai' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                          {ord.status}
-                        </div>
+                        <p className="font-black text-green-600 italic">Rp {ord.total?.toLocaleString()}</p>
                       </div>
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-xs font-bold"><span>Status Progres:</span> <span>{ord.status}</span></div>
-                        <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
-                           <div className={`h-full transition-all duration-1000 bg-green-600 ${ord.status==='Verifikasi'?'w-1/4':ord.status==='Diproses'?'w-1/2':ord.status==='Dikirim'?'w-3/4':'w-full'}`}></div>
-                        </div>
+                      
+                      <div className="space-y-4">
+                         <div className="flex justify-between text-[10px] font-black uppercase text-slate-400">
+                           <span>Track Progres</span>
+                           <span className="text-green-700">{ord.status}</span>
+                         </div>
+                         <div className="flex gap-1">
+                            {[1,2,3,4,5].map(step => (
+                              <div key={step} className={`h-2 flex-1 rounded-full ${getStatusWeight(ord.status) >= step ? 'bg-green-600' : 'bg-slate-100'}`}></div>
+                            ))}
+                         </div>
+                         <div className="grid grid-cols-5 text-[7px] font-black text-center text-slate-400 uppercase leading-tight">
+                            <span>Diterima</span>
+                            <span>Proses</span>
+                            <span>Antar</span>
+                            <span>Sampai</span>
+                            <span>Selesai</span>
+                         </div>
                       </div>
                    </div>
                  ))
@@ -324,80 +360,96 @@ export default function App() {
         )}
       </main>
 
-      {/* --- MODAL CHECKOUT PRO --- */}
+      {/* --- BOTTOM NAVIGATION (PROFESSIONAL) --- */}
+      <nav className="fixed bottom-6 left-4 right-4 bg-green-950 text-white rounded-[2.5rem] p-2 flex justify-between items-center shadow-2xl z-50 md:max-w-md md:mx-auto">
+         <NavBtn active={tab==='optimasi'} icon={<Calculator size={22}/>} label="Optima" onClick={()=>setTab('optimasi')}/>
+         <NavBtn active={tab==='uber'} icon={<Truck size={22}/>} label="Uber" onClick={()=>setTab('uber')}/>
+         <NavBtn active={tab==='hilir'} icon={<Store size={22}/>} label="Hilir" onClick={()=>setTab('hilir')}/>
+         <NavBtn active={tab==='riwayat'} icon={<History size={22}/>} label="Riwayat" onClick={()=>setTab('riwayat')}/>
+      </nav>
+
+      {/* --- MODAL CHECKOUT COMPREHENSIVE --- */}
       {checkoutItem && (
-        <div className="fixed inset-0 bg-green-950/90 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-           <div className="bg-white w-full max-w-xl rounded-[3rem] shadow-2xl overflow-y-auto max-h-[90vh]">
-              {checkoutStep === 'options' && (
-                <div className="p-8 md:p-10 space-y-6">
-                  <div className="flex justify-between">
-                    <h3 className="text-2xl font-black italic">CHECKOUT</h3>
-                    <button onClick={()=>setCheckoutItem(null)}><X/></button>
-                  </div>
-                  
-                  {/* Info Item */}
-                  <div className="flex gap-4 bg-slate-50 p-4 rounded-2xl border">
-                    <img src={checkoutItem.img} className="w-20 h-20 rounded-xl object-cover" />
-                    <div><p className="font-black">{checkoutItem.name}</p><p className="font-black text-green-600">Rp {checkoutItem.price.toLocaleString()}</p></div>
-                  </div>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-end md:items-center justify-center">
+           <div className="bg-white w-full max-w-lg rounded-t-[3rem] md:rounded-[3rem] shadow-2xl animate-in slide-in-from-bottom-10">
+              <div className="p-8 space-y-6">
+                 {checkoutStep === 'options' && (
+                   <>
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-2xl font-black italic tracking-tighter">CHECKOUT</h3>
+                      <button onClick={()=>setCheckoutItem(null)} className="p-2 bg-slate-100 rounded-full"><X/></button>
+                    </div>
 
-                  {/* OPSI SPESIFIK */}
-                  {checkoutItem.type === 'bahan' && (
-                    <div className="space-y-2">
-                       <label className="text-[10px] font-black uppercase text-slate-400">Pilih Sistem Pembelian</label>
-                       <div className="grid grid-cols-2 gap-2">
-                          <button onClick={()=>setCheckoutItem({...checkoutItem, purchaseType:'Langsung', totalPrice: checkoutItem.price * checkoutItem.qty})} className={`p-3 rounded-xl font-bold text-xs border-2 transition ${checkoutItem.purchaseType==='Langsung'?'border-green-600 bg-green-50 text-green-600':'border-slate-100'}`}>BELI LANGSUNG</button>
-                          <button onClick={()=>setCheckoutItem({...checkoutItem, purchaseType:'Grup', totalPrice: (checkoutItem.price * 0.8) * checkoutItem.qty})} className={`p-3 rounded-xl font-bold text-xs border-2 transition ${checkoutItem.purchaseType==='Grup'?'border-yellow-500 bg-yellow-50 text-yellow-700':'border-slate-100'}`}>GRUP (DISKON 20%)</button>
+                    <div className="flex gap-4 bg-slate-50 p-4 rounded-3xl border border-slate-100">
+                      <img src={checkoutItem.img} className="w-20 h-20 rounded-2xl object-cover shadow-sm" />
+                      <div className="flex-1">
+                        <p className="font-black text-green-950 leading-tight">{checkoutItem.name}</p>
+                        <p className="text-xs text-slate-400 mt-1 line-clamp-1">{checkoutItem.desc}</p>
+                        <p className="text-lg font-black text-green-600 mt-1">Rp {checkoutItem.price.toLocaleString()}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                       <div className="space-y-2">
+                         <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Jumlah</label>
+                         <div className="flex items-center justify-between bg-slate-100 p-2 rounded-2xl">
+                            <button onClick={()=>setCheckoutItem({...checkoutItem, qty: Math.max(1, checkoutItem.qty-1), totalPrice: Math.max(1, checkoutItem.qty-1) * checkoutItem.price})} className="bg-white p-2 rounded-xl"><MinusCircle size={20}/></button>
+                            <span className="font-black text-lg">{checkoutItem.qty}</span>
+                            <button onClick={()=>setCheckoutItem({...checkoutItem, qty: checkoutItem.qty+1, totalPrice: (checkoutItem.qty+1) * checkoutItem.price})} className="bg-white p-2 rounded-xl"><PlusCircle size={20}/></button>
+                         </div>
+                       </div>
+                       
+                       <div className="space-y-2 text-right">
+                         <label className="text-[10px] font-black uppercase text-slate-400 mr-2">Subtotal</label>
+                         <div className="pt-3 font-black text-2xl text-green-950">Rp {checkoutItem.totalPrice.toLocaleString()}</div>
                        </div>
                     </div>
-                  )}
 
-                  {checkoutItem.type === 'alat' && (
-                    <div className="space-y-2">
-                       <label className="text-[10px] font-black uppercase text-slate-400">Pilihan Pengambilan</label>
-                       <div className="grid grid-cols-2 gap-2">
-                          <button onClick={()=>setCheckoutItem({...checkoutItem, deliveryMode:'Ambil Sendiri', totalPrice: checkoutItem.price})} className={`p-3 rounded-xl font-bold text-xs border-2 transition ${checkoutItem.deliveryMode==='Ambil Sendiri'?'border-green-600 bg-green-50 text-green-600':'border-slate-100'}`}>AMBIL SENDIRI</button>
-                          <button onClick={()=>setCheckoutItem({...checkoutItem, deliveryMode:'Antar Ke Lahan', totalPrice: checkoutItem.price + 50000})} className={`p-3 rounded-xl font-bold text-xs border-2 transition ${checkoutItem.deliveryMode==='Antar Ke Lahan'?'border-blue-600 bg-blue-50 text-blue-600':'border-slate-100'}`}>DIANTAR (+50rb)</button>
-                       </div>
+                    {(checkoutItem.type === 'hilir' || checkoutItem.type === 'alat') && (
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Metode Pengiriman</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button onClick={()=>setCheckoutItem({...checkoutItem, deliveryMode:'Ambil Sendiri'})} className={`p-3 rounded-2xl font-bold text-xs border-2 transition ${checkoutItem.deliveryMode==='Ambil Sendiri'?'border-green-600 bg-green-50 text-green-700':'border-slate-100'}`}>AMBIL SENDIRI</button>
+                          <button onClick={()=>setCheckoutItem({...checkoutItem, deliveryMode:'Diantar'})} className={`p-3 rounded-2xl font-bold text-xs border-2 transition ${checkoutItem.deliveryMode==='Diantar'?'border-blue-600 bg-blue-50 text-blue-700':'border-slate-100'}`}>DIANTAR</button>
+                        </div>
+                      </div>
+                    )}
+
+                    <button onClick={()=>setCheckoutStep('qris')} className="w-full bg-green-950 text-white py-5 rounded-[2rem] font-black shadow-xl hover:bg-black transition">BAYAR SEKARANG</button>
+                   </>
+                 )}
+
+                 {checkoutStep === 'qris' && (
+                    <div className="text-center space-y-6">
+                       <h3 className="text-xl font-black italic">SCAN QRIS AGRI-PAY</h3>
+                       <div className="bg-slate-50 p-6 rounded-[3rem] border-2 border-dashed inline-block"><QrCode size={180}/></div>
+                       
+                       {previewUrl ? (
+                         <div className="space-y-4">
+                           <div className="relative">
+                             <img src={previewUrl} className="w-full h-44 object-cover rounded-3xl border-4 border-green-100" />
+                             <button onClick={()=>setProofFile(null)} className="absolute -top-2 -right-2 bg-red-500 text-white p-2 rounded-full shadow-lg"><X size={16}/></button>
+                           </div>
+                           <button onClick={()=>submitOrder()} className="w-full bg-green-600 text-white py-5 rounded-[2rem] font-black shadow-xl">UPLOAD & SELESAIKAN</button>
+                         </div>
+                       ) : (
+                         <label className="flex flex-col items-center p-8 border-4 border-dashed rounded-[3rem] cursor-pointer hover:bg-slate-50 border-slate-200">
+                            <Upload className="text-slate-300 mb-2" size={32}/>
+                            <span className="font-black text-[10px] text-slate-400 uppercase">Klik Untuk Upload Bukti</span>
+                            <input type="file" className="hidden" accept="image/*" onChange={e=>setProofFile(e.target.files?.[0] || null)} />
+                         </label>
+                       )}
+                       <button onClick={()=>setCheckoutStep('options')} className="text-slate-400 font-bold text-xs uppercase">Kembali</button>
                     </div>
-                  )}
+                 )}
 
-                  <div className="space-y-2">
-                     <label className="text-[10px] font-black uppercase text-slate-400">Alamat Pengiriman / Lahan</label>
-                     <textarea rows={2} className="w-full p-4 bg-slate-50 rounded-2xl border" placeholder="Jl. Raya Pertanian No. 1..." onChange={e=>setCheckoutItem({...checkoutItem, address: e.target.value})}></textarea>
-                  </div>
-
-                  <div className="flex justify-between items-center border-t pt-6">
-                     <div><p className="text-xs font-bold text-slate-400">TOTAL BAYAR</p><p className="text-2xl font-black text-green-900">Rp {checkoutItem.totalPrice.toLocaleString()}</p></div>
-                     <button onClick={()=>setCheckoutStep('qris')} className="bg-green-900 text-white px-8 py-4 rounded-2xl font-black shadow-xl">BAYAR SEKARANG</button>
-                  </div>
-                </div>
-              )}
-
-              {checkoutStep === 'qris' && (
-                <div className="p-8 md:p-10 text-center space-y-6">
-                  <h3 className="text-xl font-black">SCAN QRIS UNTUK BAYAR</h3>
-                  <div className="bg-slate-50 p-4 rounded-3xl border-2 border-dashed inline-block"><QrCode size={180}/></div>
-                  <div className="space-y-4">
-                    <label className="flex flex-col items-center p-6 border-2 border-dashed rounded-2xl cursor-pointer">
-                       <Upload size={24} className="text-green-600 mb-2"/>
-                       <span className="text-[10px] font-black uppercase text-slate-400">{proofFile ? proofFile.name : 'Upload Bukti TF'}</span>
-                       <input type="file" className="hidden" onChange={e=>setProofFile(e.target.files?.[0])} />
-                    </label>
-                    <button onClick={submitFinalOrder} className={`w-full py-4 rounded-2xl font-black transition ${proofFile ? 'bg-green-600 text-white shadow-xl' : 'bg-slate-200 text-slate-400'}`}>KONFIRMASI PEMBAYARAN</button>
-                    <button onClick={()=>setCheckoutStep('options')} className="text-slate-400 font-bold text-xs uppercase">Batal</button>
-                  </div>
-                </div>
-              )}
-
-              {checkoutStep === 'success' && (
-                <div className="p-16 text-center space-y-6">
-                   <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto"><CheckCircle2 size={40}/></div>
-                   <h3 className="text-2xl font-black">PESANAN DIPROSES</h3>
-                   <p className="text-slate-500 font-medium">Terima kasih, pembayaran Anda sedang kami verifikasi. Silakan cek menu "Riwayat Pesanan".</p>
-                   <button onClick={()=>{setCheckoutItem(null); setCheckoutStep('options'); setTab('pesanan'); setProofFile(null);}} className="bg-green-950 text-white px-10 py-4 rounded-2xl font-black">Tutup</button>
-                </div>
-              )}
+                 {checkoutStep === 'loading' && (
+                    <div className="py-20 text-center space-y-6">
+                       <div className="w-16 h-16 border-4 border-green-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                       <p className="font-black text-green-950 uppercase tracking-tighter">Memproses Pesanan Anda...</p>
+                    </div>
+                 )}
+              </div>
            </div>
         </div>
       )}
@@ -405,40 +457,59 @@ export default function App() {
   );
 }
 
-// SUB-COMPONENTS
-function SideBtn({ active, icon, label, onClick }: any) {
+// UI SUB-COMPONENTS
+function InputCard({ title, children, onAdd }: any) {
   return (
-    <button onClick={onClick} className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all ${active ? 'bg-white/10 text-yellow-400 shadow-inner' : 'text-green-100/60 hover:bg-white/5 hover:text-white'}`}>
-      {icon} <span className="text-sm font-black uppercase tracking-tighter">{label}</span>
-    </button>
-  );
-}
-
-function CardContainer({ title, children, onAdd }: any) {
-  return (
-    <div className="bg-white p-6 md:p-8 rounded-[2.5rem] shadow-sm border h-fit">
-      <div className="flex justify-between items-center mb-6">
-        <h3 className="font-black text-green-700 text-xs uppercase tracking-widest">{title}</h3>
-        <button onClick={onAdd} className="bg-green-50 text-green-600 p-2 rounded-full hover:bg-green-100 transition"><Plus size={18}/></button>
+    <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 h-fit">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="font-black text-green-800 text-[10px] uppercase tracking-widest">{title}</h3>
+        <button onClick={onAdd} className="p-2 bg-green-50 text-green-600 rounded-full"><Plus size={16}/></button>
       </div>
       <div className="space-y-3">{children}</div>
     </div>
   );
 }
 
-function ProductCard({ item, onBuy, type }: any) {
+function NavBtn({ active, icon, label, onClick }: any) {
   return (
-    <div className="bg-white rounded-[2.5rem] overflow-hidden shadow-sm border p-4 hover:shadow-2xl transition-all group">
-      <div className="relative h-44 overflow-hidden rounded-[2rem] mb-4">
-        <img src={item.img} className="w-full h-full object-cover group-hover:scale-110 transition duration-1000" />
-      </div>
-      <div className="space-y-3 px-2">
-        <h4 className="font-black text-green-950 text-lg leading-tight h-12 line-clamp-2">{item.name}</h4>
-        <div className="flex justify-between items-center">
-          <p className="font-black text-green-600 text-base italic">Rp {item.price.toLocaleString()}</p>
-          <button onClick={() => onBuy(item)} className="bg-green-700 text-white px-5 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg active:scale-90 transition">PESAN</button>
-        </div>
-      </div>
+    <button onClick={onClick} className={`flex-1 flex flex-col items-center gap-1 p-2 rounded-2xl transition ${active ? 'bg-white text-green-950' : 'text-green-100/50 hover:text-white'}`}>
+      {icon} <span className="text-[8px] font-black uppercase tracking-tighter">{label}</span>
+    </button>
+  );
+}
+
+function FilterBtn({ active, label, icon, onClick }: any) {
+  return (
+    <button onClick={onClick} className={`flex items-center gap-2 px-6 py-3 rounded-full font-black text-xs whitespace-nowrap transition border ${active ? 'bg-green-950 text-white border-green-950 shadow-lg scale-105' : 'bg-white text-slate-500 border-slate-100'}`}>
+      {icon} {label}
+    </button>
+  );
+}
+
+function ProductCard({ item, onBuy }: any) {
+  return (
+    <div className="bg-white rounded-[2.5rem] p-4 border border-slate-100 shadow-sm hover:shadow-xl transition-all group">
+       <div className="relative h-44 rounded-[2rem] overflow-hidden mb-4 shadow-inner">
+         <img src={item.img} className="w-full h-full object-cover group-hover:scale-110 transition duration-700" />
+       </div>
+       <div className="px-2 space-y-2">
+         <h4 className="font-black text-green-950 leading-tight h-10 line-clamp-2">{item.name}</h4>
+         <div className="flex justify-between items-center pt-2">
+           <p className="font-black text-green-600 text-sm italic">Rp {item.price.toLocaleString()}</p>
+           <button onClick={()=>onBuy(item)} className="bg-green-900 text-white px-5 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg active:scale-95 transition">PESAN</button>
+         </div>
+       </div>
     </div>
   );
+}
+
+function getStatusWeight(status: string) {
+  const map: any = {
+    'Pesanan Diterima': 1,
+    'Pesanan Diproses': 2,
+    'Pesanan Diantar': 3,
+    'Pesanan Sampai Tujuan': 4,
+    'Pesanan Selesai': 5
+  };
+  return map[status] || 1;
 }
