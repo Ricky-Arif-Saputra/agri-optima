@@ -131,7 +131,7 @@ class SimplexOptimizer {
  * ============================================================
  */
 const firebaseConfig = {
-  apiKey: "AIzaSyC-GANTI-DENGAN-API-KEY-ASLI-ANDA", 
+  apiKey: "AIzaSyAh1y1fn0VxL_juhfdsIKCyePyNSeR6z6k",
   authDomain: "agri-optima-2026.firebaseapp.com",
   projectId: "agri-optima-2026",
   storageBucket: "agri-optima-2026.firebasestorage.app",
