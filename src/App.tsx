@@ -118,7 +118,7 @@ class SimplexSolver {
 // 2. FIREBASE INITIALIZATION
 // ==========================================
 const firebaseConfig = {
-  apiKey: "AIzaSyC-MASUKKAN-API-KEY-ANDA", 
+  apiKey: "AIzaSyAh1y1fn0VxL_juhfdsIKCyePyNSeR6z6k",
   authDomain: "agri-optima-2026.firebaseapp.com",
   projectId: "agri-optima-2026",
   storageBucket: "agri-optima-2026.firebasestorage.app",
