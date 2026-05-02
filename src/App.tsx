@@ -154,7 +154,7 @@ class EnterpriseSimplexEngine {
 // ============================================================
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAh1y1fn0VxL_juhfdsIKCyePyNSeR6z6k",
+  apiKey: "AIzaSyC-GANTI-DENGAN-KEY-ASLI-ANDA", 
   authDomain: "agri-optima-2026.firebaseapp.com",
   projectId: "agri-optima-2026",
   storageBucket: "agri-optima-2026.firebasestorage.app",
